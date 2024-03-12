@@ -1,5 +1,5 @@
 {
-  "name": "stock_calculator",
+  "name": "ui",
   "version": "0.1.0",
   "private": true,
   "dependencies": {
@@ -7,8 +7,8 @@
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
     "@types/jest": "^27.5.2",
-    "@types/node": "^16.18.87",
-    "@types/react": "^18.2.64",
+    "@types/node": "^16.18.88",
+    "@types/react": "^18.2.65",
     "@types/react-dom": "^18.2.21",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
