@@ -18,7 +18,7 @@ FETCH_INTERVAL = 5  # in seconds
 class StockStreamer:
     def __init__(self):
         self.stock_symbols = ['aapl', 'msft']
-        self.pricing = {'aapl': 100, 'msft':100}
+        self.pricing = {'aapl': 100, 'msft':100, 'orcl': 100, 'tsla': 100}
 
     def update_symbols(self, symbols):
         self.stock_symbols = symbols
