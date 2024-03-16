@@ -2,10 +2,26 @@ import React, { useEffect, useState } from 'react';
 import './App.css';
 import { io, Socket } from 'socket.io-client';
 import { Doughnut, Pie } from 'react-chartjs-2';
-import { Chart, ArcElement } from 'chart.js'
+import { Chart, ArcElement, CategoryScale, LinearScale, PointElement, LineElement, Title, Legend } from 'chart.js'
 import { ChartOptions } from 'chart.js/auto'; // Importing ChartOptions might be necessary for proper typing
+import _debounce from 'lodash/debounce';
+import StockGraphs from './StockGraphs';
 
-Chart.register(ArcElement);
+
+
+// Register required chart elements and scales
+Chart.register(
+  ArcElement,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Legend
+);
+// Chart.register(ArcElement);
+// Chart.registerScale('category', Chart.scale.CategoryScale);
+
 
 interface TickerInfo {
   symbol: string;
@@ -13,6 +29,12 @@ interface TickerInfo {
   stocksHeld: number;
   totalValue: () => number;
 }
+
+export type StockData = {
+  [symbol: string]: {
+    [date: string]: number;
+  };
+};
 
 const App: React.FC = () => {
   const [tickers, setTickers] = useState<TickerInfo[]>([
@@ -23,7 +45,17 @@ const App: React.FC = () => {
   ]);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [chartData, setChartData] = useState<any>(null);
+  const [timeData, setTimeData] = useState<any>(null);
 
+
+  function checkProperties(stockData: StockData) {
+    for (var key in stockData) {
+        if (!stockData[key]) {
+          return false;
+        }
+    }
+    return true;
+  }
   useEffect(() => {
     const newSocket = io('http://127.0.0.1:5000');
     setSocket(newSocket);
@@ -37,30 +69,72 @@ const App: React.FC = () => {
     });
 
     updateChartData(); // Call a function to update the chart data
+    updateTimeSeriesData(); // get time series for new symbol
+
+
+    newSocket.on('prices_over_time', (timeSeriesData: StockData) => {
+      console.log('series - ', timeSeriesData)
+      // const isValidTimeSeries = Object.values(timeSeriesData).every(x !== null)
+      if (checkProperties(timeSeriesData)) {
+        setTimeData(timeSeriesData);
+      }
+    })
+ 
 
     return () => {
       newSocket.disconnect();
     };
   }, []);
 
+  const debouncedUpdateTickerSymbols = _debounce((symbols: string[]) => {
+    socket?.emit('update_ticker_symbols', symbols);
+    updateTimeSeriesData(); // get time series for new symbol
+  }, 500); // Adjust the debounce delay as needed
+
+  const handleTickerSymbolChange = (index: number, value: string) => {
+    const newTickers = [...tickers];
+    newTickers[index].symbol = value.toUpperCase();
+    setTickers(newTickers);
+  
+    // Update the chart data when ticker symbols change
+    updateChartData();
+    console.log('handling change');
+      // Emit updated symbols to the WebSocket
+
+    updateTickerSymbols();
+    // const symbols = newTickers.map(ticker => ticker.symbol.toLowerCase());
+    // socket?.emit('update_ticker_symbols', symbols);
+
+  };
+
   const portfolioTotal = tickers.reduce((partial, ticker) => partial + ticker.totalValue(), 0)
   useEffect(() => {
     updateChartData(); // Call a function to update the chart data
-    // setPortfolioTotal();
   }, [tickers]);
 
   const updateTickerSymbols = () => {
     const symbols = tickers.map(ticker => ticker.symbol.toLowerCase());
-    socket?.emit('update_ticker_symbols', symbols);
+    debouncedUpdateTickerSymbols(symbols);
+
+    // socket?.emit('update_ticker_symbols', symbols);
+    console.log('updated ticker symbols - ', symbols);
   };
-  const options = {
-    plugins: {
-      legend: {
-        display: true,
-        position: 'bottom', // You can change the legend position as needed
-      },
-    },
+
+  const updateTimeSeriesData = () => {
+    socket?.emit('get_historical_data');
   };
+
+
+  // const options = {
+  //   plugins: {
+  //     legend: {
+  //       display: true,
+  //       position: 'bottom', // You can change the legend position as needed
+  //     },
+  //   },
+  // };
+
+
   const updateChartData = () => {
     const data = {
       labels: tickers.map(ticker => ticker.symbol),
@@ -83,16 +157,14 @@ const App: React.FC = () => {
       },
     };
     setChartData(data);
-    console.log(chartData)
+    console.log('chart data - ', chartData)
+    // console.log('time series data - ', timeData);
 
   }
-
-  // const [portfolioTotal, setPortfolioTotal] = useState(0)
 
 
   const Legend: React.FC<{ tickers: TickerInfo[] }> = ({ tickers }) => {
     const backgroundColors = chartData?.datasets?.[0]?.backgroundColor || [];
-    console.log('background - ', backgroundColors);
     return (
       <div style={{ display: 'flex', flexDirection: 'column', marginLeft: '20px' }}>
         {tickers.map((ticker, index) => (
@@ -108,84 +180,148 @@ const App: React.FC = () => {
       </div>
     );
   };
-  // const Legend: React.FC<{ tickers: TickerInfo[] }> = ({ tickers }) => {
-  //   const { data } = chartData || {};
-  //   const { datasets } = data || {};
-  //   const backgroundColors = datasets?.[0]?.backgroundColor || [];
-  //   const totalValue = datasets?.[0]?.data?.reduce((sum: number, value: number) => sum + value, 0) || 1; // Prevent division by zero
-  //   const percentages = datasets?.[0]?.data?.map((value: number) => ((value / totalValue) * 100).toFixed(2)) || [];
-  
-  //   return (
-  //     <div style={{ display: 'flex', flexDirection: 'column', marginLeft: '20px' }}>
-  //       {tickers.map((ticker, index) => (
-  //         <div key={index} style={{ display: 'flex', alignItems: 'center', marginBottom: '5px' }}>
-  //           {backgroundColors[index] && (
-  //             <div style={{ width: '10px', height: '10px', backgroundColor: backgroundColors[index], marginRight: '5px' }}></div>
-  //           )}
-  //           <span>{ticker.symbol}</span>
-  //           {percentages[index] && <span style={{ marginLeft: '5px' }}>{`(${percentages[index]}%)`}</span>}
-  //         </div>
-  //       ))}
-  //     </div>
-  //   );
-  // };
-  
+
   return (
     <div className="App">
       <header className="App-header">
-        <table>
-          <thead>
-            <tr>
-              <th>Ticker Symbol</th>
-              <th>Price</th>
-              <th># Stocks Held</th>
-              <th>Total Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tickers.map((ticker, index) => (
-              <tr key={index}>
-                <td>
-                  <input
-                    type="text"
-                    value={ticker.symbol}
-                    onChange={e => {
-                      const newTickers = [...tickers];
-                      newTickers[index].symbol = e.target.value.toUpperCase();
-                      setTickers(newTickers);
-                    }}
-                  />
-                </td>
-                <td>{ticker.price.toFixed(2)}</td>
-                <td>
-                  <input
-                    type="number"
-                    value={ticker.stocksHeld}
-                    onChange={e => {
-                      const newTickers = [...tickers];
-                      newTickers[index].stocksHeld = parseInt(e.target.value, 10) || 0;
-                      setTickers(newTickers);
-                    }}
-                  />
-                </td>
-                <td>{ticker.totalValue().toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <button onClick={updateTickerSymbols}>Update Ticker Symbols</button>
-        <div style={{ display: 'flex', alignItems: 'center', marginTop: '20px' }}>
-        {chartData && (
-          <div style={{ width: '300px', height: '300px', marginRight: '20px' }}>
-            <Doughnut data={chartData} />
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          {/* Left Section for Stock Graphs */}
+          <div style={{ flex: 1 }}>
+            {timeData && <StockGraphs stockData={timeData} />}
           </div>
-        )}
-        <Legend tickers={tickers} />
-      </div>
-
+  
+          {/* Right Section for Ticker Table and Doughnut Chart */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            {/* Ticker Table */}
+            <table>
+              <thead>
+                <tr>
+                  <th>Ticker Symbol</th>
+                  <th>Price</th>
+                  <th># Stocks Held</th>
+                  <th>Total Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tickers.map((ticker, index) => (
+                  <tr key={index}>
+                    <td>
+                      <input
+                        type="text"
+                        value={ticker.symbol}
+                        onChange={(e) => handleTickerSymbolChange(index, e.target.value)}
+                      />
+                    </td>
+                    <td>{ticker.price.toFixed(2)}</td>
+                    <td>
+                      <input
+                        type="number"
+                        value={ticker.stocksHeld}
+                        onChange={(e) => {
+                          const newTickers = [...tickers];
+                          newTickers[index].stocksHeld = parseInt(e.target.value, 10) || 0;
+                          setTickers(newTickers);
+                        }}
+                      />
+                    </td>
+                    <td>{ticker.totalValue().toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button onClick={updateTickerSymbols}>Update Ticker Symbols</button>
+  
+            {/* Doughnut Chart */}
+            {chartData && (
+              <div className="pie-chart" style={{ marginTop: '20px' }}>
+                <Doughnut data={chartData} />
+                <Legend tickers={tickers} />
+              </div>
+            )}
+          </div>
+        </div>
       </header>
     </div>
   );
+  
+//   return (
+//     <div className="App">
+//       <header className="App-header">
+//         <table>
+//           <thead>
+//             <tr>
+//               <th>Ticker Symbol</th>
+//               <th>Price</th>
+//               <th># Stocks Held</th>
+//               <th>Total Value</th>
+//             </tr>
+//           </thead>
+//           <tbody>
+//             {tickers.map((ticker, index) => (
+//               <tr key={index}>
+//                 <td>
+//                   <input
+//                     type="text"
+//                     value={ticker.symbol}
+//                     onChange={e => handleTickerSymbolChange(index, e.target.value)}
+
+//                     // onChange={e => {
+//                     //   const newTickers = [...tickers];
+//                     //   newTickers[index].symbol = e.target.value.toUpperCase();
+//                     //   setTickers(newTickers);
+//                     // }}
+//                   />
+//                 </td>
+//                 <td>{ticker.price.toFixed(2)}</td>
+//                 <td>
+//                   <input
+//                     type="number"
+//                     value={ticker.stocksHeld}
+//                     onChange={e => {
+//                       const newTickers = [...tickers];
+//                       newTickers[index].stocksHeld = parseInt(e.target.value, 10) || 0;
+//                       setTickers(newTickers);
+//                     }}
+//                   />
+//                 </td>
+//                 <td>{ticker.totalValue().toFixed(2)}</td>
+//               </tr>
+//             ))}
+//           </tbody>
+//         </table>
+//         <button onClick={updateTickerSymbols}>Update Ticker Symbols</button>
+//         {/* <button onClick={updateTimeSeriesData}>Update Time Series Data</button> */}
+//         <div className="chart-container" style={{ display: 'flex', marginTop: '20px' }}>
+//   {timeData && (
+//     <div style={{ marginRight: '50px' }}>
+//       <StockGraphs stockData={timeData} />
+//     </div>
+//   )}
+//   {chartData && (
+//     <div style={{ marginLeft: '50px' }}>
+//       <div className="pie-chart">
+//         <Doughnut data={chartData} />
+//         <Legend tickers={tickers} />
+//       </div>
+//     </div>
+//   )}
+// </div>
+//         {/* {timeData &&
+//           <StockGraphs stockData={timeData}/>
+//         }
+//         <div style={{ display: 'flex', alignItems: 'center', marginTop: '20px' }}>
+//         {chartData && (
+//           <div style={{ width: '300px', height: '300px', marginRight: '20px' }}>
+//             <Doughnut data={chartData} />
+//           </div>
+//         )}
+//         <Legend tickers={tickers} />
+//       </div> */}
+
+//       </header>
+      
+//     </div>
+//   );
 };
 
 export default App;

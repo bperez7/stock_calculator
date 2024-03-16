@@ -15,14 +15,38 @@ CORS(app, supports_credentials=True, origins='*')  # Enable CORS for the entire 
 
 FETCH_INTERVAL = 5  # in seconds
 
+# historical endpoint https://api.iex.cloud/v1/data/core/historical_prices/msft?range=2m&token=pk_a7f0e9682c6e4a87b5eb8ac8c3073470
+# intraday endpoint https://api.iex.cloud/v1/data/core/intraday_prices/msft?token=pk_a7f0e9682c6e4a87b5eb8ac8c3073470
+
+# TODO
+# 1. options for intraday, weekly, and monthly view
+# 2. line graph for each
+# 3. Decide which stocks to show on line graph (checkboxes next to tickers?)
 class StockStreamer:
     def __init__(self):
-        self.stock_symbols = ['aapl', 'msft']
+        self.stock_symbols = ['aapl', 'msft', 'orcl', 'tsla']
         self.pricing = {'aapl': 100, 'msft':100, 'orcl': 100, 'tsla': 100}
 
     def update_symbols(self, symbols):
         self.stock_symbols = symbols
-
+    def fetch_historical_data(self):
+        try:
+            # latest_prices = dict()
+            time_series_data = {symbol: None for symbol in self.stock_symbols}
+            for symbol in self.stock_symbols:
+                API_ENDPOINT = f"https://api.iex.cloud/v1/data/core/historical_prices/{symbol}?range=2m&token={TOKEN}"
+                response = requests.get(API_ENDPOINT)
+                if response.status_code == 200:
+                    data = response.json()
+                    prices_over_time = {item["priceDate"]: item["close"] for item in data}
+                    time_series_data[symbol] = prices_over_time
+                    print('prices_over_time - ', str(prices_over_time))
+                else:
+                    print(f"Error fetching data: HTTP {response.status_code}")
+            app.logger.info(f'Emitted data: {time_series_data}')
+            socketio.emit('prices_over_time', time_series_data)
+        except requests.RequestException as e:
+            print(f"Request failed: {e}") 
     def fetch_data(self):
         while True:
             try:
@@ -63,6 +87,11 @@ def handle_connect():
 @socketio.on('disconnect')
 def handle_disconnect():
     print('Client disconnected')
+
+@socketio.on('get_historical_data')
+def handle_prices_over_time():
+    print("Getting historical data")
+    streamer.fetch_historical_data()
 
 if __name__ == '__main__':
     streamer = StockStreamer()
